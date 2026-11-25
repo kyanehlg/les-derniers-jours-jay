@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#171611">
+  <meta name="description" content="Jay explore une carte du désert, suit des indices et choisit sa route avec une horloge qui avance seulement lorsqu’il agit.">
+  <title>Les Derniers Jours — Jay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="interactions.css?v=8">
+</head>
+<body>
+  <canvas id="sandstorm" aria-hidden="true"></canvas><div class="dust-haze" aria-hidden="true"></div>
+  <header class="topbar"><a class="brand" href="index.html">JAY <span>/ LES DERNIERS JOURS</span></a><div class="top-status"><i></i><span id="status-text">AVANT LA TEMPÊTE</span><time id="header-clock">14:30</time></div><div class="top-right"><span id="save-status">SAUVEGARDE ACTIVE</span><label class="volume-control" for="volume-range"><span>VOL.</span><input id="volume-range" type="range" min="0" max="100" value="35" aria-label="Volume des sons"></label><button id="sound-toggle" type="button" aria-pressed="false">SON : OFF</button></div></header>
+  <main>
+    <section id="welcome-screen" class="welcome screen">
+      <div class="welcome-scene" aria-hidden="true">
+        <div class="scene-backdrop"></div><div class="scene-dust"></div><div class="scene-vignette"></div>
+        <span class="scene-coordinate">SECTEUR 09 / FRÉQUENCE PERDUE</span>
+      </div>
+      <div class="menu-overline"><span>LES DERNIERS JOURS</span><span>ARCHIVES DU SECTEUR 09</span></div>
+      <div class="welcome-copy">
+        <p class="eyebrow">AVENTURE NARRATIVE · SURVIE</p>
+        <h1>LES DERNIERS<br><em>JOURS.</em></h1>
+        <p>Le désert garde les traces de ceux qui ont disparu. Jay n’a qu’une soirée pour les retrouver.</p>
+        <div class="welcome-meta"><span>14 JUILLET · 14:30</span><span>LA TEMPÊTE ARRIVE À 17:00</span></div>
+        <label class="slot-picker">EMPLACEMENT ACTIF<select id="save-slot"><option value="1">01 · Principal</option><option value="2">02 · Voyage bis</option><option value="3">03 · Exploration</option></select></label>
+        <div class="welcome-actions">
+          <button class="primary" id="new-game" type="button">NOUVELLE PARTIE <b>↗</b></button>
+          <button class="secondary hidden" id="continue-game" type="button">CONTINUER <b>→</b></button>
+          <button class="secondary menu-load" id="load-game" type="button">CHARGER UNE PARTIE <b>⌕</b></button>
+        </div>
+        <div class="menu-utility">
+          <button class="menu-link" id="settings-button" type="button">PARAMÈTRES</button>
+          <button class="menu-link" id="credits-button" type="button">CRÉDITS</button>
+        </div>
+        <small>Trois sauvegardes locales · aucun compte requis</small>
+      </div>
+      <div class="welcome-footer"><span>UN MONDE ORIGINAL</span><span>SON &amp; MOUVEMENT RÉGLABLES DANS LES PARAMÈTRES</span></div>
+    </section>
+
+    <section id="game-screen" class="game-screen screen hidden">
+      <div class="game-heading"><div><p class="eyebrow" id="phase-label">PROLOGUE — LA TEMPÊTE APPROCHE</p><h1 id="game-title">CHOISIS UN LIEU<br><em>À FOUILLER.</em></h1><p id="game-help">Le temps n’avance que lorsque Jay agit. Le déplacement, les fouilles et les décisions ont une durée.</p><nav class="tool-rail" aria-label="Outils de Jay"><button type="button" data-open-panel="map">CARTE <span>⌖</span></button><button type="button" data-open-panel="inventory">SAC <span id="inventory-count">0 OBJET</span></button><button type="button" data-open-panel="journal">JOURNAL <span>J</span></button><button type="button" data-open-panel="pause">PAUSE <span>Ⅱ</span></button></nav></div><div class="clock-card" id="countdown"><small>HEURE LOCALE</small><b id="timer">14:30</b><small id="game-date">JOUR 01 · 14 JUILLET</small><small id="elapsed-time">ÉCOULÉ · 0 MIN</small><small id="storm-deadline">TEMPÊTE · 17:00</small></div></div>
+      <div class="layout">
+        <section class="map-column"><div class="map-label"><span>SECTEUR 09 · CARTE DES ENVIRONS</span><span id="map-instruction">① CLIQUE SUR UN LIEU</span></div>
+          <div class="mission-strip" aria-live="polite"><span class="mission-sigil">✳</span><div><small>OBJECTIF EN COURS</small><b id="field-objective">Retrouve les traces du convoi disparu.</b></div><button type="button" data-open-panel="help">INDICE <b>?</b></button></div>
+          <div class="map" id="map" aria-label="Carte topographique interactive. Faites glisser pour vous déplacer et utilisez les boutons pour zoomer.">
+            <div class="map-world" id="map-world">
+            <svg class="routes" viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true"><defs><pattern id="map-grain" width="90" height="90" patternUnits="userSpaceOnUse"><circle cx="13" cy="21" r="1" fill="#d7bd8c" opacity=".22"/><circle cx="61" cy="53" r="1.3" fill="#d7bd8c" opacity=".16"/><path d="M0 75 28 70m36-48 18-3" stroke="#d7bd8c" stroke-width="1" opacity=".12"/></pattern></defs><rect width="1000" height="600" fill="url(#map-grain)"/><g class="contours"><path d="M-50 118 Q160 72 300 138T560 118 1060 72"/><path d="M-50 130 Q160 84 300 150T560 130 1060 84"/><path d="M-50 144 Q160 98 300 164T560 144 1060 98"/><path d="M-40 500 Q120 445 250 485T500 470 780 525 1050 455"/><path d="M-40 514 Q120 459 250 499T500 484 780 539 1050 469"/><path d="M405 -20 Q370 100 435 190T420 365 470 620"/><path d="M420 -20 Q385 100 450 190T435 365 485 620"/><path d="M740 -20 Q700 120 760 235T730 420 790 620"/><path d="M755 -20 Q715 120 775 235T745 420 805 620"/></g><path class="dry-river" d="M-20 354 Q100 317 182 351T340 335 Q410 310 500 348T657 348Q760 355 850 310T1020 318"/><path class="road-secondary" d="M130 160 L360 235 L270 425 L575 390 L830 230 L850 475 M360 235 L620 145 L830 160 L830 230 M575 390 L480 500 M620 145 L575 390 M620 145 L830 330 L850 475"/><path class="road-primary" d="M130 160 L360 235 L575 390 L830 330 L850 475"/><path class="escape-route" d="M130 160 L360 235 L575 390 L830 330 L850 475"/><path class="fog-region" data-fog="radio" d="M775 0H1000V195H790Z"/><path class="fog-region" data-fog="canyon" d="M710 250H1000V468H710Q760 360 710 250Z"/><path class="fog-region" data-fog="oasis" d="M380 480H640V600H380Z"/><path class="fog-region" data-fog="border" d="M780 465H1000V600H780Z"/><g class="map-labels"><text x="498" y="286">OUED ASSÉCHÉ</text><text x="445" y="88">PLATEAU DES PIERRES</text><text x="80" y="552">ANCIENNE VOIE FERRÉE</text><text x="886" y="98">ZONE DE TEMPÊTE</text></g></svg>
+            <span class="terrain terrain-one"></span><span class="terrain terrain-two"></span><span class="hazard">TEMPÊTE DE SABLE<br><small>VISIBILITÉ RÉDUITE</small></span>
+            <button type="button" class="map-place" data-zone="shelter" style="--x:13%;--y:27%"><i>⌂</i><b>REFUGE 09</b><small>ABRI</small></button>
+            <button type="button" class="map-place" data-zone="market" style="--x:37%;--y:39%"><i>▤</i><b>BAZAR</b><small>PROVISIONS</small></button>
+            <button type="button" class="map-place" data-zone="clinic" style="--x:64%;--y:24%"><i>✚</i><b>INFIRMERIE</b><small>SOINS</small></button>
+            <button type="button" class="map-place" data-zone="depot" style="--x:27%;--y:72%"><i>▧</i><b>DÉPÔT</b><small>MATÉRIAUX</small></button>
+            <button type="button" class="map-place" data-zone="village" style="--x:58%;--y:66%"><i>⌂</i><b>VILLAGE</b><small>RENCONTRES</small></button>
+            <button type="button" class="map-place" data-zone="radio" style="--x:83%;--y:25%"><i>⌁</i><b>RELAIS</b><small>FRÉQUENCE 09</small></button>
+            <button type="button" class="map-place" data-zone="canyon" style="--x:80%;--y:53%"><i>⌁</i><b>GORGES</b><small>PASSAGE SECRET</small></button>
+            <button type="button" class="map-place" data-zone="oasis" style="--x:48%;--y:84%"><i>◉</i><b>OASIS</b><small>CAMP MÉDICAL</small></button>
+            <button type="button" class="map-place border-place" data-zone="border" style="--x:85%;--y:81%"><i>⇢</i><b>FRONTIÈRE</b><small id="border-label">OBJECTIF</small></button>
+            <span class="compass">N<br>↑</span><span class="map-coordinate" id="map-coordinate">SECTEUR 09 — 4 KM</span>
+            </div><div class="map-controls" aria-label="Contrôles de carte"><button type="button" id="map-zoom-out" aria-label="Dézoomer">−</button><button type="button" id="map-zoom-in" aria-label="Zoomer">+</button><button type="button" id="map-center" aria-label="Centrer sur Jay">JAY</button><span id="map-zoom-label">100%</span></div>
+          </div>
+          <div class="map-key"><span><i></i> LIEU À EXPLORER</span><span><i class="danger-dot"></i> DANGER</span><span><i class="goal-dot"></i> SORTIE DU PAYS</span></div>
+          <section id="place-panel" class="place-panel hidden" aria-live="polite"><div class="place-heading"><div><p class="eyebrow" id="place-phase">CHOISIS UN BÂTIMENT</p><h2 id="place-title">Lieu</h2></div><button id="close-place" class="close-button" type="button" aria-label="Fermer">×</button></div><p id="place-description" class="place-description"></p><div class="travel-strip" id="travel-strip"><span id="travel-distance">POSITION DE JAY</span><button type="button" id="travel-button">SE RENDRE ICI · — MIN <b>→</b></button></div><section id="site-plan" class="site-plan hidden" aria-label="Plan local du bâtiment"></section><div id="building-list" class="building-list"></div></section>
+          <section id="event-panel" class="event-panel hidden" aria-live="polite"><p class="eyebrow" id="event-kicker">DÉCISION</p><h2 id="event-title"></h2><div class="speaker-card" id="speaker-card"><span id="speaker-portrait">J</span><div><b id="speaker-name">JAY</b><small id="speaker-role">TÉMOIN</small></div></div><p id="event-description"></p><div id="inspection-list" class="inspection-list"></div><div id="choice-list" class="choice-list"></div></section>
+        </section>
+        <aside class="sidebar"><div class="jay-card"><span class="jay-avatar">J</span><div><b>JAY</b><small>SURVIVANT · HOMME</small></div><i class="pulse"></i></div><div class="resource-card"><div class="side-heading">SAC DE JAY <span>RESSOURCES</span></div><div id="resources" class="resources"></div></div><div class="status-card"><div class="side-heading">ÉTAT DE JAY <span id="condition">STABLE</span></div><div class="stat"><label>VITALITÉ <b id="health-value">100%</b></label><div class="meter"><i id="health-meter"></i></div></div><div class="stat"><label>MORAL <b id="morale-value">70%</b></label><div class="meter gold"><i id="morale-meter"></i></div></div><div class="stat"><label>PRESSION DE LA TEMPÊTE <b id="stress-value">20%</b></label><div class="meter red"><i id="stress-meter"></i></div></div><div class="stat"><label>REFUGE <b id="base-value">60%</b></label><div class="meter"><i id="base-meter"></i></div></div></div><section class="campaign-card" aria-live="polite"><div class="campaign-top"><span id="chapter-number">CHAPITRE 01</span><span id="clue-counter">PISTES 0/2</span></div><h2 id="chapter-title">La piste du Sud</h2><div class="quest-meter"><i id="quest-meter"></i></div><p id="main-quest">Retrouve les traces du convoi disparu.</p><div class="side-quest"><span>OPTIONNEL</span><p id="side-quest-text">Trouve des soins pour Leïla, la médecin du camp.</p></div><div id="achievement-list" class="achievement-list"></div></section><div class="objective"><span>✳</span><div><b>OBJECTIF</b><p id="objective-text">Fouille les bâtiments et trouve une route vers la frontière.</p></div></div><div class="journal"><div class="side-heading">JOURNAL <span>DERNIERS ÉVÉNEMENTS</span></div><div id="journal-list"></div></div><button class="save-button" id="save-quit" type="button">⟲ SAUVEGARDER ET QUITTER</button></aside>
+      </div>
+    </section>
+    <section id="ending-screen" class="ending screen hidden"><div class="ending-scene"><div class="sun"></div><div class="dune dune-a"></div><div class="dune dune-b"></div></div><div class="ending-copy"><p class="eyebrow" id="ending-kicker">FIN DE L’HISTOIRE</p><h1 id="ending-title">JAY S’EST<br><em>ÉCHAPPÉ.</em></h1><p id="ending-text"></p><div id="ending-stats" class="ending-stats"></div><button class="primary" id="restart" type="button">RECOMMENCER <b>↻</b></button></div></section>
+  </main><dialog id="game-dialog" class="game-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><div><p class="eyebrow" id="dialog-kicker">DOSSIER DE JAY</p><h2 id="dialog-title">Inventaire</h2></div><button type="button" id="dialog-close" class="close-button" aria-label="Fermer">×</button></div><div id="dialog-content" class="dialog-content"></div></dialog><div id="atmosphere-beat" aria-hidden="true"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><script src="app.js?v=11"></script>
+</body>
+</html>
