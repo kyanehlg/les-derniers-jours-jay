@@ -4,6 +4,8 @@ Une aventure narrative de survie dans le désert. Explore une carte topographiqu
 
 ## Jouer
 
+**Jouer en ligne :** <https://kyanehlg.github.io/les-derniers-jours-jay/>
+
 Ouvre `index.html` dans un navigateur moderne, ou lance le serveur :
 
 ```sh
