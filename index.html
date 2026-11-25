@@ -5,10 +5,10 @@
   <meta name="description" content="Jay explore une carte du désert, suit des indices et choisit sa route avec une horloge qui avance seulement lorsqu’il agit.">
   <title>Les Derniers Jours — Jay</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="interactions.css?v=8">
+  <link rel="stylesheet" href="interactions.css?v=9">
 </head>
 <body>
-  <canvas id="sandstorm" aria-hidden="true"></canvas><div class="dust-haze" aria-hidden="true"></div>
+  <canvas id="sandstorm" aria-hidden="true"></canvas><div class="dust-haze" aria-hidden="true"></div><div id="storm-cinematic" aria-hidden="true"><div class="cinematic-stillness"></div><div class="cinematic-wall"></div><div class="cinematic-flash"></div><div class="cinematic-surge"></div><p class="cinematic-caption">LA MURAILLE A FRAPPÉ LE SECTEUR 09</p></div>
   <header class="topbar"><a class="brand" href="index.html">JAY <span>/ LES DERNIERS JOURS</span></a><div class="top-status"><i></i><span id="status-text">AVANT LA TEMPÊTE</span><time id="header-clock">14:30</time></div><div class="top-right"><span id="save-status">SAUVEGARDE ACTIVE</span><label class="volume-control" for="volume-range"><span>VOL.</span><input id="volume-range" type="range" min="0" max="100" value="35" aria-label="Volume des sons"></label><button id="sound-toggle" type="button" aria-pressed="false">SON : OFF</button></div></header>
   <main>
     <section id="welcome-screen" class="welcome screen">
@@ -58,7 +58,7 @@
             <span class="compass">N<br>↑</span><span class="map-coordinate" id="map-coordinate">SECTEUR 09 — 4 KM</span>
             </div><div class="map-controls" aria-label="Contrôles de carte"><button type="button" id="map-zoom-out" aria-label="Dézoomer">−</button><button type="button" id="map-zoom-in" aria-label="Zoomer">+</button><button type="button" id="map-center" aria-label="Centrer sur Jay">JAY</button><span id="map-zoom-label">100%</span></div>
           </div>
-          <div class="map-key"><span><i></i> LIEU À EXPLORER</span><span><i class="danger-dot"></i> DANGER</span><span><i class="goal-dot"></i> SORTIE DU PAYS</span></div>
+          <div class="map-key"><span><i></i> LIEU À EXPLORER</span><span><i class="danger-dot"></i> DANGER</span><span><i class="shelter-dot"></i> ABRI</span><span><i class="goal-dot"></i> SORTIE DU PAYS</span></div>
           <section id="place-panel" class="place-panel hidden" aria-live="polite"><div class="place-heading"><div><p class="eyebrow" id="place-phase">CHOISIS UN BÂTIMENT</p><h2 id="place-title">Lieu</h2></div><button id="close-place" class="close-button" type="button" aria-label="Fermer">×</button></div><p id="place-description" class="place-description"></p><div class="travel-strip" id="travel-strip"><span id="travel-distance">POSITION DE JAY</span><button type="button" id="travel-button">SE RENDRE ICI · — MIN <b>→</b></button></div><section id="site-plan" class="site-plan hidden" aria-label="Plan local du bâtiment"></section><div id="building-list" class="building-list"></div></section>
           <section id="event-panel" class="event-panel hidden" aria-live="polite"><p class="eyebrow" id="event-kicker">DÉCISION</p><h2 id="event-title"></h2><div class="speaker-card" id="speaker-card"><span id="speaker-portrait">J</span><div><b id="speaker-name">JAY</b><small id="speaker-role">TÉMOIN</small></div></div><p id="event-description"></p><div id="inspection-list" class="inspection-list"></div><div id="choice-list" class="choice-list"></div></section>
         </section>
@@ -66,6 +66,6 @@
       </div>
     </section>
     <section id="ending-screen" class="ending screen hidden"><div class="ending-scene"><div class="sun"></div><div class="dune dune-a"></div><div class="dune dune-b"></div></div><div class="ending-copy"><p class="eyebrow" id="ending-kicker">FIN DE L’HISTOIRE</p><h1 id="ending-title">JAY S’EST<br><em>ÉCHAPPÉ.</em></h1><p id="ending-text"></p><div id="ending-stats" class="ending-stats"></div><button class="primary" id="restart" type="button">RECOMMENCER <b>↻</b></button></div></section>
-  </main><dialog id="game-dialog" class="game-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><div><p class="eyebrow" id="dialog-kicker">DOSSIER DE JAY</p><h2 id="dialog-title">Inventaire</h2></div><button type="button" id="dialog-close" class="close-button" aria-label="Fermer">×</button></div><div id="dialog-content" class="dialog-content"></div></dialog><div id="atmosphere-beat" aria-hidden="true"></div><div id="toast" class="toast" role="status" aria-live="polite"></div><script src="app.js?v=11"></script>
+  </main><dialog id="game-dialog" class="game-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><div><p class="eyebrow" id="dialog-kicker">DOSSIER DE JAY</p><h2 id="dialog-title">Inventaire</h2></div><button type="button" id="dialog-close" class="close-button" aria-label="Fermer">×</button></div><div id="dialog-content" class="dialog-content"></div></dialog><div id="atmosphere-beat" aria-hidden="true"></div><div id="toast" class="toast" role="status" aria-live="polite"></div>  <script src="app.js?v=13"></script>
 </body>
 </html>

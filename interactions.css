@@ -297,3 +297,52 @@ body.reduced-motion *,body.reduced-motion *::before,body.reduced-motion *::after
 @media(max-width:850px){.exploration-layout{grid-template-columns:minmax(0,1fr) minmax(280px,340px)}.exploration-inspector{padding:16px}.scene-atmosphere{font-size:9px}}
 @media(max-width:680px){.game-dialog.exploration-mode .dialog-heading{min-height:58px;padding:8px 12px}.game-dialog.exploration-mode .dialog-heading .eyebrow{font-size:7px}.game-dialog.exploration-mode .dialog-heading h2{font-size:17px}.exploration-layout{grid-template-columns:1fr;grid-template-rows:minmax(250px,43dvh) minmax(0,1fr);overflow:auto}.exploration-scene-column{grid-template-rows:minmax(0,1fr) auto;min-height:250px}.exploration-scene-shell{min-height:220px}.scene-readout{top:10px;left:10px;right:10px;font-size:6px}.scene-atmosphere{left:10px;bottom:9px;max-width:73%;padding:6px 8px;font-size:8px}.scene-footnote{padding:8px 10px;font-size:5px}.exploration-hotspot>span{width:26px;height:26px;font-size:11px}.exploration-hotspot small{max-width:100px;font-size:6px}.exploration-inspector{overflow:visible;padding:13px}.inspector-description{min-height:0}.paper-object{min-height:88px;margin:9px 0}.paper-object.photo-object{min-height:100px}.exploration-object-list{margin:10px 0}.exploration-object{min-height:38px}.exploration-return{margin-top:8px}}
 @media(prefers-reduced-motion:reduce){.exploration-art,.exploration-dust,.exploration-hotspot>span{animation:none!important}.exploration-art .drawer-open .drawer-front{animation:none;transform:translateY(12px)}}
+
+.shelter-dot{background:#9fc391!important}
+.map-place.storm-shelter{border-color:#9fc391;box-shadow:0 0 0 1px #9fc39144,0 0 18px #9fc39140}
+.map.storm-covered{background-color:#514941;filter:saturate(.55) contrast(1.08)}
+.map.storm-covered:after{background:linear-gradient(100deg,#50494026,#81746655 48%,#37373652),linear-gradient(0deg,#191a1bd9,transparent 58%)}
+.map.storm-covered .routes{opacity:.42}
+.map.storm-covered .map-place:not(.storm-shelter){opacity:.72}
+html[data-weather="building"] .top-status i{background:#d39b66;box-shadow:0 0 11px #d39b66;animation:wind-warning 1.8s ease-in-out infinite alternate}
+html[data-weather="emergency"] .top-status i,html[data-weather="storm"] .top-status i{background:#d9795d;box-shadow:0 0 13px #d9795d}
+html[data-weather="storm"] .map-label span+span,html[data-weather="emergency"] .map-label span+span{color:#e29a70}
+.dust-haze{opacity:.07;background:linear-gradient(110deg,transparent 15%,rgba(196,164,132,.13),rgba(176,122,75,.12),transparent 82%)}
+html[data-weather="building"] .dust-haze{opacity:.16}
+html[data-weather="emergency"] .dust-haze{opacity:.25}
+html[data-weather="storm"] .dust-haze{opacity:.36}
+html[data-weather="storm"] .map{animation:storm-map-shudder 1.8s ease-in-out infinite}
+html[data-weather="storm"] .map-place.storm-shelter{animation:shelter-pulse 2.4s ease-in-out infinite alternate}
+body.reduced-motion .dust-haze,body.reduced-motion .map,body.reduced-motion .map-place.storm-shelter{animation:none!important}
+body.world-paused .dust-haze,body.world-paused .map,body.world-paused .map-place.storm-shelter,body.world-paused #storm-cinematic.active,body.world-paused #storm-cinematic.active *{animation-play-state:paused!important}
+body.reduced-flashes .cinematic-flash{display:none!important}
+#storm-cinematic{position:fixed;inset:0;z-index:38;overflow:hidden;visibility:hidden;opacity:0;pointer-events:none;background:#17191b}
+#storm-cinematic.active{visibility:visible;animation:storm-cinematic 6.2s cubic-bezier(.16,.76,.25,1) both}
+.cinematic-stillness,.cinematic-wall,.cinematic-flash,.cinematic-surge{position:absolute;inset:0}
+.cinematic-stillness{background:linear-gradient(#17191b,#302923);animation:storm-stillness 6.2s ease both}
+.cinematic-wall{top:16%;background:radial-gradient(ellipse at 42% 76%,#c5a17b 0,#71665c 24%,#343538 63%,#17191b 100%);clip-path:polygon(0 42%,9% 29%,18% 39%,28% 22%,39% 37%,51% 17%,63% 31%,74% 14%,86% 30%,100% 18%,100% 100%,0 100%);transform:translateY(50%);animation:storm-wall-approach 6.2s cubic-bezier(.18,.72,.24,1) both}
+.cinematic-flash{background:#e5e9e9;opacity:0;animation:storm-lightning 6.2s linear both}
+.cinematic-surge{top:40%;background:linear-gradient(180deg,#c7b39a00 0%,#b49a7b9c 23%,#948272e8 65%,#302d2bf5);transform:translateY(105%);animation:storm-surge 6.2s ease-in-out both}
+.cinematic-caption{position:absolute;left:8%;right:8%;bottom:12%;margin:0;text-align:center;color:#fff4df;font:600 clamp(12px,2vw,20px) var(--mono);letter-spacing:.18em;text-shadow:0 2px 18px #151412;opacity:0;animation:storm-caption 6.2s ease both}
+body.reduced-motion #storm-cinematic.active{animation:storm-cinematic-reduced 1.8s ease both}
+body.reduced-motion #storm-cinematic.active .cinematic-stillness,body.reduced-motion #storm-cinematic.active .cinematic-wall,body.reduced-motion #storm-cinematic.active .cinematic-surge,body.reduced-motion #storm-cinematic.active .cinematic-caption{animation:none}
+body.reduced-motion #storm-cinematic.active .cinematic-wall{transform:none;opacity:.5}
+body.reduced-motion #storm-cinematic.active .cinematic-caption{opacity:1}
+.settings-row select{max-width:180px;padding:7px;background:#1a1b18;border:1px solid #d7b77b66;color:var(--paper);font:8px var(--mono)}
+.game-screen .game-heading>div>p:last-child{font-size:.625rem}
+.mission-strip b{font-size:.5625rem}
+.mission-strip small,.map-label,.map-key,.place-description,.building-text b,.building-text small,.building-action,.event-panel>p,.choice-button b,.choice-button small,.choice-cost,.objective p,.journal #journal-list p{font-size:.4375rem}
+.place-heading h2,.event-panel h2{font-size:1.125rem}
+.game-dialog .dialog-content p,.game-dialog .dialog-content small,.game-dialog .dialog-content button,.game-dialog .dialog-content label{font-size:.5625rem}
+@keyframes wind-warning{to{transform:scale(1.4);filter:brightness(1.35)}}
+@keyframes storm-map-shudder{0%,100%{transform:translate(0)}35%{transform:translate(-1px,1px)}68%{transform:translate(1px,-1px)}}
+@keyframes shelter-pulse{to{box-shadow:0 0 0 2px #9fc39155,0 0 24px #9fc39188}}
+@keyframes storm-cinematic{0%{opacity:0}8%{opacity:1}85%{opacity:1}100%{opacity:0;visibility:hidden}}
+@keyframes storm-stillness{0%,12%{opacity:0}18%,28%{opacity:.92}50%{opacity:.2}100%{opacity:.08}}
+@keyframes storm-wall-approach{0%,22%{transform:translateY(48%) scale(.72);filter:blur(16px);opacity:.28}55%{transform:translateY(3%) scale(1.08);filter:blur(4px);opacity:.94}100%{transform:translateY(-13%) scale(1.22);filter:blur(0);opacity:1}}
+@keyframes storm-lightning{0%,34%,39%,42%,100%{opacity:0}35%{opacity:.8}37%{opacity:.04}40%{opacity:.58}41%{opacity:0}}
+@keyframes storm-surge{0%,47%{transform:translateY(105%)}72%{transform:translateY(8%)}100%{transform:translateY(-10%)}}
+@keyframes storm-caption{0%,54%{opacity:0;transform:translateY(10px)}66%,88%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+@keyframes storm-cinematic-reduced{0%{opacity:0}15%,70%{opacity:1}100%{opacity:0;visibility:hidden}}
+@media(max-width:650px){.map.storm-covered .map-place:not(.storm-shelter){opacity:.84}.cinematic-caption{bottom:18%;font-size:10px;letter-spacing:.1em}.settings-row select{max-width:145px;font-size:7px}}
+@media(prefers-reduced-motion:reduce){html[data-weather="building"] .top-status i,.map.storm-covered,.map-place.storm-shelter{animation:none!important}#storm-cinematic.active,#storm-cinematic.active *{animation-duration:.01ms!important}}

@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const SAVE_KEY = 'jay-survival-save-v5';
+  const SAVE_SCHEMA_VERSION = 2;
   const SAVE_SLOT_KEYS = [1, 2, 3].map(slot => `${SAVE_KEY}-slot-${slot}`);
   const PREVIOUS_SAVE_KEY = 'jay-survival-save-v4';
   const LEGACY_SAVE_KEY = 'jay-survival-save-v3';
@@ -12,9 +13,13 @@
   const $ = id => document.getElementById(id);
   let selectedSlot = 1;
   let reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let reduceFlashes = false;
+  let textScale = 1;
+  let difficulty = 'normal';
   let hasMotionPreference = false;
   let syncStormAnimation = () => {};
   let atmosphereTimer = null;
+  let stormCinematicTimer = null;
   let mapZoom = 1;
   let mapOffset = { x: 0, y: 0 };
   let mapDrag = null;
@@ -36,42 +41,46 @@
     2: 'Les voix de la pierre',
     3: 'La dernière traversée'
   };
-  const state = {
-    phase: 'welcome',
-    chapter: 1,
-    day: 1,
-    clockMinutes: START_CLOCK,
-    elapsedMinutes: 0,
-    position: 'shelter',
-    discovered: ['shelter', 'market', 'clinic', 'depot', 'village'],
-    inspected: [],
-    exploredDetails: [],
-    inventory: { waterskin: 1, fieldTools: 1 },
-    documents: [],
-    readDocuments: [],
-    linkedEvidence: [],
-    resources: { water: 1, food: 1, materials: 1, medicine: 0 },
-    health: 100,
-    morale: 70,
-    base: 60,
-    route: 0,
-    stress: 20,
-    clues: 0,
-    trust: 0,
-    selectedZone: null,
-    currentSite: null,
-    searched: [],
-    visited: [],
-    journal: [],
-    achievements: [],
-    flags: {},
-    encounterDays: [],
-    randomSeed: 0,
-    activeEncounter: null,
-    pendingScene: null,
-    ending: null,
-    toastTimer: null
-  };
+  function createInitialState() {
+    return {
+      phase: 'welcome',
+      chapter: 1,
+      day: 1,
+      clockMinutes: START_CLOCK,
+      elapsedMinutes: 0,
+      position: 'shelter',
+      discovered: ['shelter', 'market', 'clinic', 'depot', 'village'],
+      inspected: [],
+      exploredDetails: [],
+      inventory: { waterskin: 1, fieldTools: 1 },
+      documents: [],
+      readDocuments: [],
+      linkedEvidence: [],
+      resources: { water: 1, food: 1, materials: 1, medicine: 0 },
+      health: 100,
+      morale: 70,
+      base: 60,
+      route: 0,
+      stress: 20,
+      clues: 0,
+      trust: 0,
+      selectedZone: null,
+      currentSite: null,
+      searched: [],
+      visited: [],
+      journal: [],
+      achievements: [],
+      flags: {},
+      encounterDays: [],
+      randomSeed: 0,
+      activeEncounter: null,
+      pendingScene: null,
+      ending: null,
+      toastTimer: null
+    };
+  }
+
+  const state = createInitialState();
 
   const itemCatalog = {
     waterskin: { name: 'Gourde cabossée', icon: '◉', category: 'Survie', weight: 0.6, description: 'La gourde de Jay, remplie juste avant la tempête.' },
@@ -281,6 +290,10 @@
     }
   };
 
+  const refugeReinforcement = zones.shelter.buildings
+    .find(building => building.id === 'room')
+    .choices.find(choice => choice.action.effect?.base > 0);
+
   const roadGraph = {
     shelter: { market: 1.6, clinic: 2.4 },
     market: { shelter: 1.6, depot: 2.2, village: 1.8 },
@@ -292,6 +305,7 @@
     oasis: { village: 2.1, canyon: 2.4, border: 1.9 },
     border: { canyon: 3.1, oasis: 1.9 }
   };
+  const stormShelterZones = ['shelter', 'clinic', 'depot', 'village', 'oasis'];
 
   const inspectionCatalog = {
     'shelter:room': [
@@ -521,14 +535,12 @@
     return SAVE_SLOT_KEYS[selectedSlot - 1];
   }
 
+  function isRecord(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
   function hasSavedGame(slot = selectedSlot) {
-    try {
-      return !!(localStorage.getItem(SAVE_SLOT_KEYS[slot - 1])
-        || (slot === 1 && (localStorage.getItem(PREVIOUS_SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY))));
-    } catch (error) {
-      console.warn('La sauvegarde locale est inaccessible.', error);
-      return false;
-    }
+    return getSaveSlotInfo(slot).valid;
   }
 
   function getSaveSlotInfo(slot) {
@@ -537,7 +549,8 @@
       if (!raw && slot === 1) raw = localStorage.getItem(PREVIOUS_SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY);
       if (!raw) return { available: false, valid: false, summary: 'Aucune sauvegarde' };
       const saved = JSON.parse(raw);
-      if (!saved || !['scavenge', 'story', 'ending', 'game'].includes(saved.phase)) {
+      if (!isRecord(saved) || !['scavenge', 'story', 'ending', 'game'].includes(saved.phase)
+        || (Number.isInteger(saved.saveVersion) && saved.saveVersion > SAVE_SCHEMA_VERSION)) {
         return { available: true, valid: false, summary: 'Données de sauvegarde illisibles' };
       }
       const chapter = saved.phase === 'scavenge' ? 'PROLOGUE' : `CHAPITRE ${String(saved.chapter || 1).padStart(2, '0')}`;
@@ -559,7 +572,7 @@
 
   function safeSave() {
     try {
-      localStorage.setItem(activeSaveKey(), JSON.stringify(state));
+      localStorage.setItem(activeSaveKey(), JSON.stringify({ ...state, saveVersion: SAVE_SCHEMA_VERSION }));
       if (selectedSlot === 1) {
         localStorage.removeItem(PREVIOUS_SAVE_KEY);
         localStorage.removeItem(LEGACY_SAVE_KEY);
@@ -588,38 +601,99 @@
         }
       }
       const saved = JSON.parse(raw || 'null');
-      if (!saved || !['scavenge', 'story', 'ending', 'game'].includes(saved.phase)) return false;
+      if (!isRecord(saved) || !['scavenge', 'story', 'ending', 'game'].includes(saved.phase)
+        || (Number.isInteger(saved.saveVersion) && saved.saveVersion > SAVE_SCHEMA_VERSION)) return false;
       const phase = saved.phase === 'game' ? 'scavenge' : saved.phase;
       const imported = sourceKey !== currentKey;
       const legacyStory = sourceKey === LEGACY_SAVE_KEY && phase === 'story';
-      const visited = Array.isArray(saved.visited) ? saved.visited : [];
-      Object.assign(state, saved, {
+      const defaults = createInitialState();
+      const savedZone = zones[saved.selectedZone] ? saved.selectedZone : null;
+      const savedResources = isRecord(saved.resources) ? saved.resources : {};
+      const savedInventory = isRecord(saved.inventory) ? saved.inventory : {};
+      const savedFlags = isRecord(saved.flags) ? saved.flags : {};
+      const savedSite = zones[savedZone]?.buildings.some(building => building.id === saved.currentSite)
+        ? saved.currentSite
+        : null;
+      const safeArray = value => Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+      const safeNumber = (value, fallback, min, max) => Number.isFinite(value)
+        ? Math.floor(clamp(value, min, max))
+        : fallback;
+      const inventory = { waterskin: 1, fieldTools: 1 };
+      for (const [id, amount] of Object.entries(savedInventory)) {
+        if (itemCatalog[id] && Number.isFinite(amount) && amount >= 0) inventory[id] = Math.floor(clamp(amount, 0, 99));
+      }
+      const resources = {};
+      for (const key of Object.keys(resourceNames)) {
+        resources[key] = safeNumber(savedResources[key], defaults.resources[key], 0, 99);
+      }
+      const flags = Object.fromEntries(Object.entries(savedFlags)
+        .filter(([, value]) => typeof value === 'boolean' || Number.isFinite(value)));
+      const activeEncounter = encounters.find(encounter => encounter.title === saved.activeEncounter?.title) || null;
+      const pendingScene = isRecord(saved.pendingScene)
+        && typeof saved.pendingScene.kicker === 'string'
+        && typeof saved.pendingScene.title === 'string'
+        && typeof saved.pendingScene.description === 'string'
+        ? {
+          kicker: saved.pendingScene.kicker,
+          title: saved.pendingScene.title,
+          description: saved.pendingScene.description,
+          important: !!saved.pendingScene.important
+        }
+        : null;
+      Object.assign(state, defaults, saved, {
         phase,
-        chapter: legacyStory ? 2 : clamp(Number(saved.chapter) || 1, 1, 3),
-        clockMinutes: Number.isFinite(saved.clockMinutes) ? Math.floor(clamp(saved.clockMinutes, 0, 1439)) : START_CLOCK,
-        elapsedMinutes: Number.isFinite(saved.elapsedMinutes) ? Math.max(0, saved.elapsedMinutes) : 0,
+        chapter: legacyStory ? 2 : safeNumber(saved.chapter, 1, 1, 3),
+        day: safeNumber(saved.day, 1, 1, 9999),
+        clockMinutes: safeNumber(saved.clockMinutes, START_CLOCK, 0, 1439),
+        elapsedMinutes: safeNumber(saved.elapsedMinutes, 0, 0, 1000000000),
         position: zones[saved.position] ? saved.position : 'shelter',
-        discovered: Array.from(new Set([...(Array.isArray(saved.discovered) ? saved.discovered : ['shelter', 'market', 'clinic', 'depot', 'village']), saved.position].filter(id => zones[id]))),
-        inspected: Array.isArray(saved.inspected) ? saved.inspected : [],
-        exploredDetails: Array.isArray(saved.exploredDetails) ? saved.exploredDetails : [],
-        inventory: Object.fromEntries(Object.entries({ waterskin: 1, fieldTools: 1, ...(saved.inventory || {}) })
-          .filter(([id, amount]) => itemCatalog[id] && Number.isFinite(amount) && amount >= 0)),
-        documents: Array.isArray(saved.documents) ? saved.documents.filter(id => documentCatalog[id]) : [],
-        readDocuments: Array.isArray(saved.readDocuments) ? saved.readDocuments.filter(id => documentCatalog[id]) : [],
-        linkedEvidence: Array.isArray(saved.linkedEvidence) ? saved.linkedEvidence : [],
-        resources: { water: 1, food: 1, materials: 1, medicine: 0, ...(saved.resources || {}) },
-        clues: legacyStory ? 2 : Number(saved.clues) || 0,
-        flags: { ...(legacyStory ? { miraContact: true } : {}), ...(saved.flags || {}) },
-        searched: Array.isArray(saved.searched) ? saved.searched : [],
-        visited: legacyStory ? visited.filter(site => site !== 'border:checkpoint') : visited,
-        journal: Array.isArray(saved.journal) ? saved.journal : [],
-        achievements: Array.isArray(saved.achievements) ? saved.achievements : [],
-        encounterDays: Array.isArray(saved.encounterDays) ? saved.encounterDays : [],
-        pendingScene: saved.pendingScene || null
+        selectedZone: savedZone,
+        currentSite: savedSite,
+        discovered: Array.from(new Set([
+          ...(safeArray(saved.discovered).length ? safeArray(saved.discovered) : defaults.discovered),
+          saved.position
+        ].filter(id => zones[id]))),
+        inspected: safeArray(saved.inspected),
+        exploredDetails: safeArray(saved.exploredDetails),
+        inventory,
+        documents: safeArray(saved.documents).filter(id => documentCatalog[id]),
+        readDocuments: safeArray(saved.readDocuments).filter(id => documentCatalog[id]),
+        linkedEvidence: safeArray(saved.linkedEvidence).filter(id => ['vanished-convoy', 'allies', 'hidden-supplies'].includes(id)),
+        resources,
+        health: safeNumber(saved.health, 100, 0, 100),
+        morale: safeNumber(saved.morale, 70, 0, 100),
+        base: safeNumber(saved.base, 60, 0, 100),
+        route: safeNumber(saved.route, 0, 0, 99),
+        stress: safeNumber(saved.stress, 20, 0, 100),
+        clues: legacyStory ? 2 : safeNumber(saved.clues, 0, 0, 99),
+        trust: safeNumber(saved.trust, 0, 0, 5),
+        flags: { ...(legacyStory ? { miraContact: true } : {}), ...flags },
+        searched: safeArray(saved.searched),
+        visited: legacyStory ? safeArray(saved.visited).filter(site => site !== 'border:checkpoint') : safeArray(saved.visited),
+        journal: safeArray(saved.journal).slice(0, 250),
+        achievements: safeArray(saved.achievements).filter(id => Object.prototype.hasOwnProperty.call(achievementNames, id)),
+        encounterDays: Array.isArray(saved.encounterDays)
+          ? saved.encounterDays.filter(day => Number.isInteger(day) && day > 0 && day <= 9999)
+          : [],
+        randomSeed: safeNumber(saved.randomSeed, 0, 0, 0xffffffff) >>> 0,
+        activeEncounter,
+        pendingScene,
+        ending: ['escape-alone', 'escape-together', 'escape-caravan', 'lost'].includes(saved.ending) ? saved.ending : null,
+        toastTimer: null
       });
       delete state.timer;
-      delete state.toastTimer;
+      delete state.saveVersion;
       if (legacyStory) Object.assign(state.flags, { miraContact: true });
+      if (state.phase === 'story' && state.flags.stormPassed) {
+        state.flags.distressSignalAvailable = state.flags.distressSignalAvailable !== false;
+        if (typeof state.flags.stormShelterSecured !== 'boolean') {
+          state.flags.stormShelterSecured = isStormShelter(state.position);
+        }
+        if (typeof state.flags.stormOngoing !== 'boolean') {
+          state.flags.stormOngoing = state.day === 1 && state.clockMinutes >= STORM_DEADLINE && state.clockMinutes < 19 * 60;
+        }
+        if (state.day > 1 || state.clockMinutes >= 19 * 60) state.flags.stormOngoing = false;
+      }
       if (imported) safeSave();
       return true;
     } catch (error) {
@@ -646,6 +720,7 @@
     active.classList.add('screen-enter');
     document.body.classList.toggle('menu-active', screen === 'welcome');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    syncStormAnimation();
   }
 
   function escapeHtml(text) {
@@ -658,6 +733,65 @@
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
   }
 
+  function getWeatherProfile() {
+    let stage = 'calm';
+    let intensity = 0.06;
+    const minute = state.clockMinutes;
+    if (state.phase === 'welcome' || state.phase === 'ending') {
+      return { stage, intensity: 0, wind: 0.12, visibility: 1 };
+    }
+
+    if (state.phase === 'scavenge') {
+      if (minute >= 16 * 60 + 30) {
+        stage = minute >= STORM_DEADLINE ? 'storm' : 'emergency';
+        intensity = 0.55 + 0.45 * clamp((minute - (16 * 60 + 30)) / 30, 0, 1);
+      } else if (minute >= 15 * 60 + 30) {
+        stage = 'building';
+        intensity = 0.08 + 0.47 * ((minute - (15 * 60 + 30)) / 60);
+      }
+    } else if (state.flags.stormOngoing) {
+      const stormProgress = clamp((minute - STORM_DEADLINE) / (2 * 60), 0, 1);
+      intensity = 1 - stormProgress * 0.62;
+      stage = intensity > 0.76 ? 'storm' : intensity > 0.48 ? 'emergency' : 'aftermath';
+    } else if (state.flags.stormPassed) {
+      stage = 'aftermath';
+      intensity = 0.08;
+    }
+
+    return {
+      stage,
+      intensity,
+      wind: 0.12 + intensity * 0.88,
+      visibility: Math.round((1 - intensity * 0.82) * 100) / 100
+    };
+  }
+
+  function isStormShelter(zoneId) {
+    return stormShelterZones.includes(zoneId);
+  }
+
+  function secureStormShelter(zoneId) {
+    if (!state.flags.stormOngoing || !isStormShelter(zoneId) || state.flags.stormShelterSecured) return;
+    state.flags.stormShelterSecured = true;
+    addLog(`Jay atteint ${zones[zoneId].name}. Les murs tiennent sous les rafales; il peut reprendre son souffle.`);
+  }
+
+  function resolveStormTravel(from, destination, km, weather, stormWasActive) {
+    if (!stormWasActive) return true;
+    if (isStormShelter(destination)) {
+      secureStormShelter(destination);
+      return true;
+    }
+    if (weather.intensity < 0.48 || isStormShelter(from)) return true;
+    const difficultyMultiplier = difficulty === 'story' ? 0.55 : difficulty === 'survival' ? 1.5 : 1;
+    const distanceFactor = clamp(km / 2, 0.5, 1.5);
+    const damage = Math.ceil(weather.intensity * 5 * distanceFactor * difficultyMultiplier);
+    state.health = clamp(state.health - damage);
+    state.stress = clamp(state.stress + Math.ceil(weather.intensity * 8));
+    addLog(`Une rafale déporte Jay sur la piste. Il perd ${damage} points de vitalité et la pression monte.`);
+    return !checkEndingConditions();
+  }
+
   function updateClockDisplay() {
     const date = new Date(GAME_START_DATE + (state.day - 1) * 86400000);
     const month = new Intl.DateTimeFormat('fr-FR', { month: 'long', timeZone: 'UTC' }).format(date).toLocaleUpperCase('fr-FR');
@@ -667,9 +801,22 @@
     $('header-clock').textContent = clock;
     $('game-date').textContent = `JOUR ${String(state.day).padStart(2, '0')} · ${dayOfMonth} ${month}`;
     $('elapsed-time').textContent = `ÉCOULÉ · ${state.elapsedMinutes} MIN`;
-    $('storm-deadline').textContent = state.phase === 'scavenge'
-      ? `TEMPÊTE · ${formatClock(STORM_DEADLINE)}`
-      : (state.clockMinutes >= 19 * 60 || state.clockMinutes < 6 * 60 ? 'NUIT · VISIBILITÉ FAIBLE' : 'JOUR · VISIBILITÉ NORMALE');
+    const weather = getWeatherProfile();
+    if (state.phase === 'scavenge' && state.clockMinutes < STORM_DEADLINE) {
+      const remaining = STORM_DEADLINE - state.clockMinutes;
+      $('storm-deadline').textContent = `${weather.stage === 'calm' ? 'TEMPÊTE' : 'ALERTE'} · ${Math.floor(remaining / 60)} H ${String(remaining % 60).padStart(2, '0')} MIN`;
+      $('status-text').textContent = weather.stage === 'calm'
+        ? 'AVANT LA TEMPÊTE'
+        : weather.stage === 'building' ? 'LE VENT SE LÈVE' : 'URGENCE · TROUVE UN ABRI';
+    } else if (weather.intensity > 0.2) {
+      $('storm-deadline').textContent = `VISIBILITÉ · ${Math.round(weather.visibility * 100)} %`;
+      $('status-text').textContent = 'TEMPÊTE EN COURS';
+    } else {
+      $('storm-deadline').textContent = state.clockMinutes >= 19 * 60 || state.clockMinutes < 6 * 60
+        ? 'NUIT · VISIBILITÉ FAIBLE'
+        : state.flags.stormPassed ? 'APRÈS-TEMPÊTE' : 'JOUR · VISIBILITÉ NORMALE';
+      $('status-text').textContent = state.flags.stormPassed ? 'APRÈS LA TEMPÊTE' : 'JAY CHERCHE UNE ISSUE';
+    }
   }
 
   function addItem(itemId) {
@@ -699,7 +846,8 @@
 
   function discoverLocations() {
     const available = new Set(state.discovered);
-    if (state.phase === 'story' || state.phase === 'ending' || state.clues > 0) available.add('radio');
+    if (state.phase === 'story' || state.phase === 'ending' || state.clues > 0
+      || state.flags.distressSignalAvailable) available.add('radio');
     if (state.chapter >= 2) {
       available.add('canyon');
       available.add('oasis');
@@ -744,7 +892,10 @@
   function travelDuration(route, km) {
     const daylight = state.clockMinutes >= 6 * 60 && state.clockMinutes < 19 * 60;
     const junctionDelay = Math.max(0, route.length - 2) * 3;
-    return Math.max(5, Math.ceil(km * (daylight ? 12 : 16) + junctionDelay));
+    const weather = getWeatherProfile();
+    const stormFactor = 1 + weather.intensity * 2;
+    const difficultyFactor = difficulty === 'story' ? 0.9 : difficulty === 'survival' ? 1.15 : 1;
+    return Math.max(5, Math.ceil((km * (daylight ? 12 : 16) + junctionDelay) * stormFactor * difficultyFactor));
   }
 
   function advanceActionTime(duration) {
@@ -759,8 +910,22 @@
       const start = state.clockMinutes;
       const step = Math.min(remaining, 1440 - start);
       const end = start + step;
+      for (const [threshold, message] of [
+        [15 * 60 + 30, 'À 15 h 30, le vent se lève. Les volets claquent et la radio commence à grésiller.'],
+        [16 * 60 + 30, 'À 16 h 30, le relais signale une muraille de sable. Les communications deviennent instables : il faut rejoindre un abri.']
+      ]) {
+        if (state.phase === 'scavenge' && start < threshold && end >= threshold) {
+          state.clockMinutes = threshold;
+          if (threshold === 16 * 60 + 30) state.flags.distressSignalAvailable = true;
+          addLog(message);
+        }
+      }
       if (start < 19 * 60 && end >= 19 * 60) {
         state.clockMinutes = 19 * 60;
+        if (state.flags.stormOngoing) {
+          state.flags.stormOngoing = false;
+          addLog('Les rafales retombent après deux heures. La poussière reste dans l’air, mais les chemins réapparaissent.');
+        }
         state.stress = clamp(state.stress + 4);
         addLog('La nuit tombe. Les déplacements deviennent plus lents et la tempête masque les repères.');
       }
@@ -774,7 +939,9 @@
       if (state.clockMinutes >= 1440) {
         state.clockMinutes = 0;
         state.day += 1;
-        state.stress = clamp(state.stress + 5);
+        const shelterRelief = state.position === 'shelter' ? Math.round(state.base / 30) : 0;
+        state.stress = clamp(state.stress + 5 - shelterRelief);
+        if (shelterRelief) addLog('Le refuge tient pendant la nuit. Jay reprend un peu de calme.');
         if (state.resources.water > 0) state.resources.water -= 1;
         else {
           state.health = clamp(state.health - 10);
@@ -839,6 +1006,18 @@
   }
 
   function getObjectiveTargets() {
+    if (state.phase === 'story' && state.flags.stormOngoing && !state.flags.stormShelterSecured) {
+      const shelters = stormShelterZones.filter(id => state.discovered.includes(id));
+      shelters.sort((left, right) => {
+        const leftRoute = findRoute(state.position, left);
+        const rightRoute = findRoute(state.position, right);
+        return (leftRoute?.km ?? Infinity) - (rightRoute?.km ?? Infinity);
+      });
+      return shelters.slice(0, 1);
+    }
+    if (state.phase === 'story' && state.flags.distressSignalAvailable && !state.flags.rescueSignalAnswered) {
+      return ['radio'];
+    }
     if (state.phase === 'scavenge' || (state.chapter === 1 && !state.flags.miraContact)) {
       if (state.clues >= 2) return ['radio'];
       const clueSites = [
@@ -924,17 +1103,29 @@
     $('main-quest').textContent = objective;
     $('quest-meter').style.width = `${progress}%`;
     const sideQuest = $('side-quest-text');
-    sideQuest.textContent = state.flags.leilaSaved
-      ? 'Leïla et les familles voyageront avec Jay.'
-      : state.resources.medicine > 0
-        ? 'Apporte une trousse à Leïla, au camp de l’oasis.'
-        : 'Optionnel : trouve des soins à l’infirmerie pour Leïla.';
+    sideQuest.textContent = state.flags.stormOngoing && !state.flags.stormShelterSecured
+      ? 'URGENT : rejoins un bâtiment solide avant la prochaine rafale.'
+      : state.flags.distressSignalAvailable && !state.flags.rescueSignalAnswered
+        ? state.flags.stormPassed
+          ? 'Signal de détresse au relais 09 : Leïla demande de l’aide.'
+          : 'Leïla appelle depuis l’oasis. Répondre avant 17 h est encore possible.'
+        : state.flags.leilaSaved
+          ? 'Leïla et les familles voyageront avec Jay.'
+          : state.resources.medicine > 0
+            ? 'Apporte une trousse à Leïla, au camp de l’oasis.'
+            : 'Optionnel : trouve des soins à l’infirmerie pour Leïla.';
     sideQuest.parentElement.classList.toggle('complete', !!state.flags.leilaSaved);
-    $('objective-text').textContent = chapter === 3
-      ? 'La dernière traversée est ouverte. Prépare les vivres et choisis qui tu veux sauver avec Jay.'
-      : chapter === 2
-        ? 'Les gorges sont accessibles. Les signes indiquent une énigme plutôt qu’un chemin.'
-        : 'Trouve les pistes du convoi et contacte Mira au relais.';
+    $('objective-text').textContent = state.flags.stormOngoing && !state.flags.stormShelterSecured
+      ? 'La visibilité chute. Rejoins un abri signalé sur la carte.'
+      : state.flags.distressSignalAvailable && !state.flags.rescueSignalAnswered
+        ? state.flags.stormPassed
+          ? 'Un appel de Leïla grésille au relais. Tu peux y répondre après avoir rejoint un abri.'
+          : 'Leïla donne sa position au relais. Répondre prend 8 minutes; la tempête approche.'
+        : chapter === 3
+          ? 'La dernière traversée est ouverte. Prépare les vivres et choisis qui tu veux sauver avec Jay.'
+          : chapter === 2
+            ? 'Les gorges sont accessibles. Les signes indiquent une énigme plutôt qu’un chemin.'
+            : 'Trouve les pistes du convoi et contacte Mira au relais.';
     $('field-objective').textContent = objective;
     $('border-label').textContent = chapter >= 3 ? 'DERNIÈRE ÉTAPE' : 'À DÉCOUVRIR';
     $('map').classList.toggle('route-open', state.route >= 2);
@@ -952,6 +1143,7 @@
       button.classList.toggle('visited', state.visited.some(site => site.startsWith(`${zone}:`)));
       button.classList.toggle('current-location', zone === state.position);
       button.classList.toggle('objective-location', objectiveTargets.has(zone));
+      button.classList.toggle('storm-shelter', state.flags.stormOngoing && isStormShelter(zone));
       button.setAttribute('aria-current', zone === state.position ? 'location' : 'false');
       button.title = `${zones[zone].name}${zone === state.position ? ' · Jay est ici' : ''}`;
     });
@@ -959,6 +1151,7 @@
       mask.classList.toggle('cleared', state.discovered.includes(mask.dataset.fog));
     });
     $('map').classList.toggle('route-open', state.route >= 2);
+    $('map').classList.toggle('storm-covered', getWeatherProfile().intensity > 0.55);
     $('map-zoom-label').textContent = `${Math.round(mapZoom * 100)}%`;
     $('map-world').style.transform = `translate(${mapOffset.x}px,${mapOffset.y}px) scale(${mapZoom})`;
     const position = zones[state.position];
@@ -984,7 +1177,6 @@
     $('game-help').textContent = scavenging
       ? 'Le temps s’arrête quand tu consultes la carte. Chaque trajet et chaque fouille consomme des minutes jusqu’à la tempête de 17:00.'
       : 'Déplacements, examens et décisions avancent l’horloge. Les menus, la carte et la lecture du journal ne consomment aucun temps.';
-    $('status-text').textContent = scavenging ? 'AVANT LA TEMPÊTE' : 'JAY CHERCHE UNE ISSUE';
     $('map-instruction').textContent = scavenging
       ? '① DESTINATION  →  ② TRAJET  →  ③ FOUILLE'
       : 'CARTE TACTIQUE · SÉLECTIONNE UNE DESTINATION';
@@ -1009,26 +1201,33 @@
     const atLocation = state.position === key;
     const route = findRoute(state.position, key);
     const duration = route ? travelDuration(route.route, route.km) : null;
+    const weather = getWeatherProfile();
+    const weatherWarning = weather.intensity > 0.4 ? ' · POUSSIÈRE / VISIBILITÉ RÉDUITE' : '';
     $('travel-strip').classList.toggle('hidden', atLocation);
     $('travel-distance').textContent = atLocation
       ? 'JAY EST SUR PLACE'
-      : route ? `${route.km.toFixed(1)} KM · ${route.route.length - 1} TRONÇON${route.route.length === 2 ? '' : 'S'}` : 'AUCUNE ROUTE CARTOGRAPHIÉE';
+      : route ? `${route.km.toFixed(1)} KM · ${route.route.length - 1} TRONÇON${route.route.length === 2 ? '' : 'S'}${weatherWarning}` : 'AUCUNE ROUTE CARTOGRAPHIÉE';
     $('travel-button').disabled = !route;
     $('travel-button').dataset.destination = key;
-    $('travel-button').textContent = route ? `SE RENDRE ICI · ${duration} MIN →` : 'ROUTE INDISPONIBLE';
+    $('travel-button').textContent = route
+      ? `SE RENDRE ICI · ${duration} MIN${weather.intensity > 0.75 ? ' · RAFALES' : ''} →`
+      : 'ROUTE INDISPONIBLE';
     $('building-list').innerHTML = zone.buildings.map(building => {
       const token = `${key}:${building.id}`;
       const completed = state.phase === 'scavenge'
         ? state.searched.includes(token)
         : state.visited.includes(storySiteToken(key, building.id));
+      const distressRevisit = key === 'radio' && building.id === 'antenna'
+        && state.flags.stormPassed && !state.flags.rescueSignalAnswered;
       const locked = state.phase === 'story' && zone.minChapter > state.chapter;
-      const disabled = completed || locked || !atLocation;
+      const disabled = (completed && !distressRevisit) || locked || !atLocation;
+      const alreadyDone = completed && !distressRevisit;
       const subtitle = locked
         ? `DÉBLOQUÉ AU CHAPITRE 0${zone.minChapter}`
         : !atLocation ? 'VOYAGE NÉCESSAIRE AVANT D’EXPLORER'
-        : completed ? 'DÉJÀ EXPLORÉ' : building.text;
+        : alreadyDone ? 'DÉJÀ EXPLORÉ' : building.text;
       const actionLabel = disabled
-        ? (locked ? 'VERROUILLÉ' : completed ? 'TERMINÉ' : 'NON SUR PLACE')
+        ? (locked ? 'VERROUILLÉ' : alreadyDone ? 'TERMINÉ' : 'NON SUR PLACE')
         : state.phase === 'scavenge' ? `FOUILLER · ${building.searchMinutes || 12} MIN` : 'EXPLORER';
       return `<button type="button" class="building-button ${completed ? 'done' : ''}" data-site="${escapeHtml(building.id)}" ${disabled ? 'disabled' : ''}>
         <span class="building-icon">${building.icon}</span>
@@ -1055,6 +1254,37 @@
           : symbol.detail,
         action: { requires: { chapter: 2 }, puzzleSymbol: symbol.id }
       }));
+    }
+    if (key === 'radio' && building.id === 'antenna') {
+      const choices = building.choices.filter(choice => !state.flags.miraContact
+        || !choice.action.flags?.miraContact);
+      if (state.flags.stormPassed && (state.flags.stormShelterSecured || !state.flags.stormOngoing)
+        && !state.flags.rescueSignalAnswered) {
+        choices.unshift({
+          title: 'Répondre au signal de détresse de Leïla',
+          detail: 'Le relais a été endommagé. Une voix demande de l’aide depuis l’oasis.',
+          action: {
+            duration: 8,
+            keepSite: !state.flags.miraContact,
+            flags: { rescueSignalAnswered: true, relayDamaged: false },
+            effect: { trust: 1, morale: 5, stress: -8 },
+            log: 'Jay rétablit une liaison brève. Leïla confirme que les familles tiennent à l’oasis et qu’elles ont besoin d’aide.'
+          }
+        });
+      }
+      return choices;
+    }
+    if (key === 'oasis' && building.id === 'camp'
+      && (state.flags.rescueSignalAnswered || state.flags.distressSignalContacted) && !state.flags.leilaSaved) {
+      return [...building.choices, {
+        title: 'Guider Leïla et les familles vers le passage sûr',
+        detail: 'La réponse radio a permis de retrouver le camp. Leïla accepte de partir avec Jay.',
+        action: {
+          flags: { leilaSaved: true },
+          effect: { trust: 1, morale: 8 },
+          log: 'Grâce à la réponse donnée au relais, Jay retrouve Leïla à l’abri des dunes. Elle rassemble les familles.'
+        }
+      }];
     }
     if (key !== 'border') return building.choices;
     if (state.chapter < 3) {
@@ -1104,12 +1334,15 @@
   }
 
   function getActionDuration(action) {
-    if (Number.isFinite(action.duration)) return action.duration;
-    if (action.puzzleSymbol) return 4;
-    if (action.ending) return 20;
-    if (action.retryable) return 12;
-    if (Object.keys(action.cost || {}).length) return 10;
-    return 7;
+    let duration = Number.isFinite(action.duration) ? action.duration
+      : action.puzzleSymbol ? 4
+        : action.ending ? 20
+          : action.retryable ? 12
+            : Object.keys(action.cost || {}).length ? 10 : 7;
+    if (state.flags.stormOngoing && !isStormShelter(state.position)) {
+      duration = Math.ceil(duration * (1 + getWeatherProfile().intensity * 0.4));
+    }
+    return duration;
   }
 
   function setSpeaker(name, role, initial) {
@@ -1126,9 +1359,10 @@
       const token = `${state.selectedZone}:${building.id}:${inspection.id}`;
       const complete = state.inspected.includes(token);
       const needsTools = inspection.requiresItem && !state.inventory[inspection.requiresItem];
+      const duration = getActionDuration({ duration: inspection.duration });
       return `<button class="inspection-button ${complete ? 'done' : ''}" type="button" data-inspection="${escapeHtml(inspection.id)}" ${complete || needsTools ? 'disabled' : ''}>
         <span><b>${escapeHtml(inspection.name)}</b><small>${complete ? 'EXAMINÉ' : needsTools ? 'OUTIL NÉCESSAIRE' : escapeHtml(inspection.result)}</small></span>
-        <span class="inspection-time">${complete ? '✓' : `${inspection.duration} MIN →`}</span>
+        <span class="inspection-time">${complete ? '✓' : `${duration} MIN →`}</span>
       </button>`;
     }).join('');
     $('inspection-list').classList.toggle('hidden', inspections.length === 0);
@@ -1331,15 +1565,17 @@
     const objectList = visibleTargets.map(target => {
       const done = isExplorationTargetComplete(siteKey, target);
       const active = target.id === selected.id;
-      return `<button type="button" class="exploration-object ${done ? 'examined' : ''} ${active ? 'active' : ''}" data-exploration-focus="${escapeHtml(target.id)}"><span class="object-glyph">${done ? '✓' : target.kind === 'photo' ? '▧' : target.kind === 'document' ? '▤' : '◈'}</span><span><b>${escapeHtml(target.name)}</b><small>${done ? 'EXAMINÉ' : `EXAMINER · ${target.duration} MIN`}</small></span><i>${done ? '✓' : '→'}</i></button>`;
+      const duration = getActionDuration({ duration: target.duration });
+      return `<button type="button" class="exploration-object ${done ? 'examined' : ''} ${active ? 'active' : ''}" data-exploration-focus="${escapeHtml(target.id)}"><span class="object-glyph">${done ? '✓' : target.kind === 'photo' ? '▧' : target.kind === 'document' ? '▤' : '◈'}</span><span><b>${escapeHtml(target.name)}</b><small>${done ? 'EXAMINÉ' : `EXAMINER · ${duration} MIN`}</small></span><i>${done ? '✓' : '→'}</i></button>`;
     }).join('');
     let actionMarkup = '';
     if (!complete) {
       const disabled = missingTool || !canCarry;
-      const label = missingTool ? 'OUTIL NÉCESSAIRE' : !canCarry ? 'SAC PLEIN' : `EXAMINER · ${selected.duration} MIN`;
+      const duration = getActionDuration({ duration: selected.duration });
+      const label = missingTool ? 'OUTIL NÉCESSAIRE' : !canCarry ? 'SAC PLEIN' : `EXAMINER · ${duration} MIN`;
       actionMarkup = selectedInspection
         ? `<button type="button" class="exploration-action" data-exploration-inspection="${escapeHtml(selectedInspection.id)}" ${disabled ? 'disabled' : ''}>${label} <b>→</b></button>`
-        : `<button type="button" class="exploration-action" data-exploration-detail="${escapeHtml(selected.id)}">FOUILLER CE DÉTAIL · ${selected.duration} MIN <b>→</b></button>`;
+        : `<button type="button" class="exploration-action" data-exploration-detail="${escapeHtml(selected.id)}">FOUILLER CE DÉTAIL · ${duration} MIN <b>→</b></button>`;
     } else if (savedDocument && state.documents.includes(selectedInspection.document)
       && !state.readDocuments.includes(selectedInspection.document)) {
       actionMarkup = `<button type="button" class="exploration-action" data-exploration-read="${escapeHtml(selectedInspection.document)}">LIRE LE DOCUMENT · 2 MIN <b>→</b></button>`;
@@ -1408,6 +1644,7 @@
     renderExplorationPanel(explorationFocus);
     if (!dialog.open) dialog.showModal();
     else dialog.focus();
+    updateStorm();
     playSound('panel');
   }
 
@@ -1415,6 +1652,7 @@
     const dialog = $('game-dialog');
     dialog.classList.remove('exploration-mode');
     if (dialog.open) dialog.close();
+    updateStorm();
     explorationFocus = null;
     explorationDocumentFace = 'front';
     explorationDocumentZoomed = false;
@@ -1426,7 +1664,7 @@
     if (!target || target.requires && !state.exploredDetails.includes(`${siteKey}:${target.requires}`)) return;
     const token = `${siteKey}:${target.id}`;
     if (state.exploredDetails.includes(token)) return;
-    const time = advanceActionTime(target.duration);
+    const time = advanceActionTime(getActionDuration({ duration: target.duration }));
     if (time.ended) return;
     if (!time.completed) {
       if (time.storm) {
@@ -1467,7 +1705,8 @@
       toast('Le sac est plein. Libère de la place avant de fouiller cet objet.');
       return;
     }
-    const time = advanceActionTime(inspection.duration);
+    const duration = getActionDuration({ duration: inspection.duration });
+    const time = advanceActionTime(duration);
     if (time.ended) {
       if (keepExplorationOpen) closeExploration();
       return;
@@ -1500,7 +1739,7 @@
     else {
       const currentZone = zones[zone];
       showChoices(currentZone, building);
-      toast(`${inspection.name} · ${inspection.duration} minutes.`);
+      toast(`${inspection.name} · ${duration} minutes.`);
     }
     if (keepExplorationOpen && !chapterScene && !time.storm && $('game-dialog').open) {
       $('game-dialog').classList.add('exploration-mode');
@@ -1510,14 +1749,89 @@
   }
 
   function showPrologueDetails(zone, building) {
+    const zoneKey = typeof zone === 'string'
+      ? zone
+      : Object.keys(zones).find(key => zones[key] === zone);
     $('event-panel').classList.remove('hidden', 'scene-beat', 'important-scene');
     $('event-kicker').textContent = `JOUR ${String(state.day).padStart(2, '0')} · FOUILLE`;
     $('event-title').textContent = building.name;
     $('event-description').textContent = building.text;
     renderInspections(zone, building);
-    $('choice-list').innerHTML = '<button class="choice-button" type="button" data-open-exploration><span><b>Explorer la pièce</b><small>Ouvre les meubles et examine les détails visibles.</small></span><span class="choice-cost">→</span></button><button class="choice-button dialogue-continue" type="button" data-dialogue-close><span><b>Continuer la fouille</b><small>La route attend.</small></span><span class="choice-cost">→</span></button>';
+    const canReinforce = zoneKey === 'shelter' && building.id === 'room';
+    const reinforceLabel = state.flags.refugeReinforced
+      ? 'REFUGE DÉJÀ RENFORCÉ'
+      : state.resources.materials < refugeReinforcement.action.cost.materials
+        ? 'MATÉRIAUX NÉCESSAIRES'
+        : `−${refugeReinforcement.action.cost.materials} MATÉRIAU · ${getActionDuration(refugeReinforcement.action)} MIN`;
+    const reinforceButton = canReinforce
+      ? `<button class="choice-button" type="button" data-reinforce-refuge ${state.flags.refugeReinforced || state.resources.materials < refugeReinforcement.action.cost.materials ? 'disabled' : ''}>
+          <span><b>Renforcer la porte du refuge</b><small>Améliore sa solidité et réduit la pression de la tempête à 17:00.</small></span>
+          <span class="choice-cost">${reinforceLabel}</span>
+        </button>`
+      : '';
+    const distressButton = zoneKey === 'radio' && building.id === 'antenna'
+      && state.flags.distressSignalAvailable && !state.flags.distressSignalContacted
+      ? `<button class="choice-button" type="button" data-distress-signal><span><b>Répondre à l’appel de détresse</b><small>Une voix de l’oasis demande de l’aide. La liaison risque de couper.</small></span><span class="choice-cost">8 MIN →</span></button>`
+      : '';
+    $('choice-list').innerHTML = `<button class="choice-button" type="button" data-open-exploration><span><b>Explorer la pièce</b><small>Ouvre les meubles et examine les détails visibles.</small></span><span class="choice-cost">→</span></button>${reinforceButton}${distressButton}<button class="choice-button dialogue-continue" type="button" data-dialogue-close><span><b>Continuer la fouille</b><small>La route attend.</small></span><span class="choice-cost">→</span></button>`;
     safeSave();
     $('event-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function reinforceRefuge() {
+    if (state.phase !== 'scavenge' || state.position !== 'shelter'
+      || state.selectedZone !== 'shelter' || state.currentSite !== 'room') return;
+    const action = refugeReinforcement.action;
+    if (state.flags.refugeReinforced) {
+      toast('Le refuge est déjà renforcé.');
+      return;
+    }
+    if (state.resources.materials < action.cost.materials) {
+      toast('Jay a besoin d’un matériau pour renforcer le refuge.');
+      return;
+    }
+    const time = advanceActionTime(getActionDuration(action));
+    if (time.ended) return;
+    if (!time.completed) {
+      if (time.storm) finishScavenge();
+      toast('La tempête interrompt les travaux avant leur achèvement.');
+      return;
+    }
+    for (const [resource, amount] of Object.entries(action.cost)) {
+      state.resources[resource] -= amount;
+    }
+    applyAction(action);
+    state.flags.refugeReinforced = true;
+    addLog(action.log);
+    playSound('choice');
+    render();
+    if (time.storm) finishScavenge();
+    else showPrologueDetails(zones.shelter, zones.shelter.buildings.find(building => building.id === 'room'));
+    toast('Le refuge est renforcé. La tempête sera moins éprouvante ici.');
+  }
+
+  function answerPreStormDistressSignal() {
+    if (state.phase !== 'scavenge' || state.clockMinutes < 16 * 60 + 30
+      || state.position !== 'radio' || state.currentSite !== 'antenna'
+      || state.flags.distressSignalContacted) return;
+    const duration = 8;
+    const time = advanceActionTime(duration);
+    if (time.ended) return;
+    if (!time.completed) {
+      if (time.storm) finishScavenge();
+      toast('La fréquence s’effondre avant que Jay puisse répondre. L’appel pourra peut-être être retrouvé après la tempête.');
+      return;
+    }
+    state.flags.distressSignalContacted = true;
+    state.flags.rescueSignalAnswered = true;
+    state.trust = clamp(state.trust + 1, 0, 5);
+    state.morale = clamp(state.morale + 4);
+    addLog('Jay répond à Leïla sur la fréquence 09. Elle confirme que les familles sont à l’oasis et qu’elles ont besoin d’aide.');
+    checkAchievements();
+    render();
+    safeSave();
+    if (time.storm) finishScavenge();
+    else showPrologueDetails(zones.radio, zones.radio.buildings.find(item => item.id === 'antenna'));
   }
 
   function animateInteraction(kind) {
@@ -1537,7 +1851,9 @@
     const puzzleStep = state.flags.puzzleStep || 0;
     $('event-description').textContent = state.selectedZone === 'canyon' && building.id === 'arches'
       ? `Signe ${puzzleStep + 1} sur 3. ${building.text}`
-      : building.text;
+      : state.selectedZone === 'radio' && state.flags.relayDamaged
+        ? `${building.text} Un éclair a fendu le boîtier; chaque rafale coupe le signal.`
+        : building.text;
     renderInspections(zone, building);
     const explorationChoice = state.phase === 'scavenge'
       ? '<button class="choice-button" type="button" data-open-exploration><span><b>Explorer la pièce</b><small>Reprendre la fouille détaillée et examiner les objets restants.</small></span><span class="choice-cost">→</span></button>'
@@ -1676,6 +1992,13 @@
     }
 
     const token = storySiteToken(key, building.id);
+    if (action.keepSite) {
+      render();
+      safeSave();
+      showChoices(zone, building);
+      toast('La fréquence reste ouverte. Jay peut poursuivre l’échange.');
+      return;
+    }
     if (!building.repeatable && !action.retryable && !state.visited.includes(token)) state.visited.push(token);
     state.currentSite = null;
     const chapterScene = advanceCampaign();
@@ -1821,16 +2144,9 @@
     mapZoom = 1;
     mapOffset = { x: 0, y: 0 };
     selectedEvidence.clear();
-    Object.assign(state, {
-      phase: 'scavenge', chapter: 1, day: 1, clockMinutes: START_CLOCK, elapsedMinutes: 0,
-      position: 'shelter', discovered: ['shelter', 'market', 'clinic', 'depot', 'village'],
-      inspected: [], exploredDetails: [], inventory: { waterskin: 1, fieldTools: 1 }, documents: [], readDocuments: [], linkedEvidence: [],
-      resources: { water: 1, food: 1, materials: 1, medicine: 0 },
-      health: 100, morale: 70, base: 60, route: 0, stress: 20,
-      clues: 0, trust: 0, selectedZone: null, currentSite: null,
-      searched: [], visited: [], journal: [], achievements: [], flags: {},
-      encounterDays: [], randomSeed: Math.floor(Math.random() * 0xffffffff),
-      activeEncounter: null, pendingScene: null, ending: null
+    Object.assign(state, createInitialState(), {
+      phase: 'scavenge',
+      randomSeed: Math.floor(Math.random() * 0xffffffff)
     });
     addLog('Jay a rejoint le refuge. La tempête est attendue à 17:00.');
     document.body.classList.add('scene-launch');
@@ -1844,24 +2160,60 @@
 
   function finishScavenge() {
     if (state.phase !== 'scavenge') return;
+    const sheltered = isStormShelter(state.position);
+    const stormStress = Math.max(8, 25 - (state.position === 'shelter'
+      ? Math.round(state.base * 0.15)
+      : sheltered ? 8 : 0));
     state.phase = 'story';
     state.chapter = 1;
-    state.stress = clamp(state.stress + 25);
+    state.stress = clamp(state.stress + stormStress);
+    state.flags.stormOngoing = true;
+    state.flags.stormShelterSecured = sheltered;
+    state.flags.distressSignalAvailable = true;
+    if (state.flags.distressSignalContacted) state.flags.rescueSignalAnswered = true;
+    state.flags.relayDamaged = true;
+    if (sheltered) {
+      addLog(`Jay tient dans ${zones[state.position].name}. La structure le protège des pires rafales.`);
+    } else {
+      const damage = Math.ceil(8 * (difficulty === 'story' ? 0.5 : difficulty === 'survival' ? 1.5 : 1));
+      state.health = clamp(state.health - damage);
+      addLog('Jay est surpris loin du refuge. Le sable le blesse avant qu’il ne trouve un abri.');
+    }
     state.selectedZone = null;
     state.currentSite = null;
     state.pendingScene = null;
     state.flags.stormPassed = true;
     addDocument('railwayNote');
     discoverLocations();
-    addLog('La tempête recouvre le secteur. Jay ouvre le carnet du cheminot et entend une voix sur la fréquence 09.');
+    addLog('Une muraille de sable engloutit le secteur. Un éclair endommage le relais 09; au milieu des parasites, une voix appelle à l’aide.');
+    if (!state.flags.stormCinematicPlayed) {
+      state.flags.stormCinematicPlayed = true;
+      playStormCinematic();
+      playSound('storm');
+    }
+    if (checkEndingConditions()) return;
     render();
     safeSave();
     showDialogue(
       'CHAPITRE 01 · LA PISTE DU SUD',
       'Quelqu’un répond sur la fréquence 09',
-      'La tempête transforme le refuge en ombre. Dans le carnet, Jay trouve des marques laissées par un convoi disparu. Une voix grésille : « Si tu vois les trois signes, cherche-moi au relais. Je m’appelle Mira. »',
+      `${sheltered
+        ? 'Les murs de l’abri vibrent sous le choc. '
+        : 'Jay est blessé par la première rafale et doit trouver un abri au plus vite. '}` +
+        'Le relais 09 grésille : Mira parle du convoi disparu, puis une seconde voix — Leïla — demande de l’aide depuis l’oasis. La tempête continue; le secteur ne s’est pas encore tu.',
       true
     );
+  }
+
+  function playStormCinematic() {
+    const overlay = $('storm-cinematic');
+    window.clearTimeout(stormCinematicTimer);
+    overlay.classList.remove('active');
+    void overlay.offsetWidth;
+    overlay.classList.add('active');
+    stormCinematicTimer = window.setTimeout(() => {
+      overlay.classList.remove('active');
+    }, reduceMotion ? 1800 : 6200);
   }
 
   function selectZone(key) {
@@ -1896,6 +2248,9 @@
       toast('Aucun chemin connu ne relie ces lieux.');
       return;
     }
+    const weatherAtDeparture = getWeatherProfile();
+    const stormWasActive = state.flags.stormOngoing;
+    const origin = state.position;
     const minutes = travelDuration(route.route, route.km);
     const result = advanceActionTime(minutes);
     if (result.ended) return;
@@ -1908,6 +2263,8 @@
     state.selectedZone = destination;
     state.currentSite = null;
     state.discovered = Array.from(new Set([...state.discovered, destination]));
+    secureStormShelter(destination);
+    if (!resolveStormTravel(origin, destination, route.km, weatherAtDeparture, stormWasActive)) return;
     render();
     safeSave();
     animateArrival();
@@ -1958,7 +2315,9 @@
       }
       return;
     }
-    if (state.phase !== 'story' || state.visited.includes(storySiteToken(key, id))) return;
+    const distressRevisit = key === 'radio' && id === 'antenna'
+      && state.flags.stormPassed && !state.flags.rescueSignalAnswered;
+    if (state.phase !== 'story' || (state.visited.includes(storySiteToken(key, id)) && !distressRevisit)) return;
     state.currentSite = id;
     renderSitePlan(key);
     showChoices(zone, building);
@@ -2032,21 +2391,38 @@
     else if (state.currentSite && state.selectedZone) {
       const zone = zones[state.selectedZone];
       const building = zone?.buildings.find(item => item.id === state.currentSite);
-      if (zone && building) showChoices(zone, building);
+      if (zone && building) {
+        if (state.phase === 'scavenge') showPrologueDetails(zone, building);
+        else showChoices(zone, building);
+      }
     } else toast('Sauvegarde chargée. La route reprend là où Jay l’a laissée.');
   }
 
   function updateStorm() {
     const canvas = $('sandstorm');
-    canvas.classList.toggle('calm', state.phase === 'welcome');
+    const weather = getWeatherProfile();
+    document.documentElement.dataset.weather = weather.stage;
+    document.documentElement.style.setProperty('--weather-intensity', String(weather.intensity));
+    canvas.classList.toggle('calm', weather.intensity < 0.18);
+    canvas.style.opacity = String(0.12 + weather.intensity * 0.72);
     document.body.classList.toggle('critical', state.stress >= 65);
     if (audioContext && ambientFilter && ambientGain) {
       const locationTone = { shelter: 230, market: 390, clinic: 310, depot: 470, village: 360, radio: 520, canyon: 290, oasis: 610, border: 440 };
       const night = state.clockMinutes >= 19 * 60 || state.clockMinutes < 6 * 60;
-      const cutoff = state.phase === 'welcome' ? 190 : Math.max(130, (locationTone[state.position] || 340) - (night ? 100 : 0));
+      const cutoff = state.phase === 'welcome' ? 190 : Math.max(130, (locationTone[state.position] || 340) - (night ? 100 : 0) + weather.intensity * 210);
       ambientFilter.frequency.setTargetAtTime(cutoff, audioContext.currentTime, 0.8);
-      ambientGain.gain.setTargetAtTime(state.phase === 'welcome' ? 0.05 : night ? 0.1 : 0.15, audioContext.currentTime, 1);
+      ambientGain.gain.setTargetAtTime($('game-dialog').open
+        ? 0
+        : state.phase === 'welcome' ? 0.05 : (night ? 0.1 : 0.12) + weather.intensity * 0.1,
+      audioContext.currentTime,
+      1);
+      if (stormGain) stormGain.gain.setTargetAtTime(
+        soundEnabled && !$('game-dialog').open ? weather.intensity * 0.22 : 0,
+        audioContext.currentTime,
+        0.7
+      );
     }
+    syncStormAnimation();
   }
 
   function initStorm() {
@@ -2057,6 +2433,9 @@
     let height = innerHeight;
     let ratio = Math.min(devicePixelRatio || 1, 2);
     let particles = [];
+    let flash = 0;
+    let nextLightning = 7000;
+    const worldPaused = () => ['welcome', 'ending'].includes(state.phase) || $('game-dialog').open;
 
     function resize() {
       width = innerWidth;
@@ -2067,51 +2446,98 @@
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      particles = Array.from({ length: Math.min(130, Math.floor(width * height / 10500)) }, () => ({
+      particles = Array.from({ length: Math.max(24, Math.min(220, Math.floor(width * height / 8500))) }, () => ({
         x: Math.random() * width,
-        y: Math.random() * height,
-        length: 4 + Math.random() * 14,
-        speed: 40 + Math.random() * 110,
-        alpha: 0.08 + Math.random() * 0.2,
-        size: 0.5 + Math.random() * 1.4
+        y: height * (0.52 + Math.random() * 0.48),
+        depth: 0.2 + Math.random() * 0.8,
+        length: 3 + Math.random() * 18,
+        alpha: 0.12 + Math.random() * 0.25,
+        size: 0.4 + Math.random() * 1.8
       }));
     }
 
     let lastFrame = 0;
     let animationFrame = 0;
     function frame(timestamp) {
+      animationFrame = 0;
+      if (worldPaused()) return;
       const delta = Math.min((timestamp - (lastFrame || timestamp)) / 1000, 0.04);
       lastFrame = timestamp;
+      const weather = getWeatherProfile();
+      const intensity = weather.intensity;
       context.clearRect(0, 0, width, height);
+      if (intensity > 0.02) {
+        const sky = context.createLinearGradient(0, 0, 0, height);
+        sky.addColorStop(0, `rgba(30,34,39,${intensity * 0.31})`);
+        sky.addColorStop(0.55, `rgba(112,91,77,${intensity * 0.15})`);
+        sky.addColorStop(1, `rgba(176,132,82,${intensity * 0.12})`);
+        context.fillStyle = sky;
+        context.fillRect(0, 0, width, height);
+
+        if (intensity > 0.35) {
+          const horizon = height * (0.66 - intensity * 0.28);
+          const wave = timestamp * (0.00015 + intensity * 0.00028);
+          context.beginPath();
+          context.moveTo(0, height);
+          context.lineTo(0, horizon);
+          for (let x = 0; x <= width + 60; x += 60) {
+            const crest = Math.sin(x * 0.004 + wave) * height * 0.025
+              + Math.sin(x * 0.0017 - wave * 0.7) * height * 0.035;
+            context.lineTo(x, horizon + crest);
+          }
+          context.lineTo(width, height);
+          context.closePath();
+          context.fillStyle = `rgba(113,91,78,${intensity * 0.2})`;
+          context.fill();
+        }
+      }
+
+      if (!reduceFlashes && intensity > 0.58) {
+        if (timestamp >= nextLightning) {
+          flash = 0.12 + Math.random() * 0.12;
+          nextLightning = timestamp + 7500 + Math.random() * 10000;
+        }
+        flash = Math.max(0, flash - delta * 0.65);
+        if (flash > 0) {
+          context.fillStyle = `rgba(225,231,235,${flash * intensity})`;
+          context.fillRect(0, 0, width, height);
+        }
+      } else flash = 0;
+
       for (const particle of particles) {
+        const speed = 26 + intensity * 520;
+        const x = particle.x;
+        const y = particle.y;
         context.beginPath();
-        context.moveTo(particle.x, particle.y);
-        context.lineTo(particle.x - particle.length, particle.y + 1.5);
-        context.strokeStyle = `rgba(222,177,112,${particle.alpha})`;
-        context.lineWidth = particle.size;
+        context.moveTo(x, y);
+        context.lineTo(x - particle.length * (0.4 + weather.wind), y + particle.length * 0.1);
+        context.strokeStyle = `rgba(${intensity > 0.55 ? '191,177,157' : '222,177,112'},${particle.alpha * (0.22 + intensity * 1.6)})`;
+        context.lineWidth = particle.size * (0.5 + particle.depth);
         context.stroke();
         if (!reduceMotion) {
-          particle.x += particle.speed * delta;
-          particle.y += particle.speed * delta / 8;
-          if (particle.x > width + 15 || particle.y > height + 8) {
+          particle.x += speed * particle.depth * delta;
+          particle.y += speed * particle.depth * delta * (0.025 + intensity * 0.11);
+          if (particle.x > width + 30 || particle.y > height + 12) {
             particle.x = -particle.length;
-            particle.y = Math.random() * height;
+            particle.y = intensity > 0.4 ? Math.random() * height : height * (0.52 + Math.random() * 0.48);
           }
         }
       }
       if (!reduceMotion) animationFrame = requestAnimationFrame(frame);
-      else animationFrame = 0;
     }
     syncStormAnimation = () => {
+      const paused = worldPaused();
+      document.body.classList.toggle('world-paused', paused);
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      if (paused) return;
       if (reduceMotion) {
-        if (animationFrame) cancelAnimationFrame(animationFrame);
-        animationFrame = 0;
         frame(performance.now());
       } else if (!animationFrame) animationFrame = requestAnimationFrame(frame);
     };
     addEventListener('resize', () => {
       resize();
-      syncStormAnimation();
+      updateStorm();
     });
     resize();
     syncStormAnimation();
@@ -2123,6 +2549,9 @@
   let ambientGain = null;
   let ambientFilter = null;
   let ambientLfo = null;
+  let stormGain = null;
+  let stormFilter = null;
+  let stormSource = null;
   let soundEnabled = false;
   let volume = 0.35;
 
@@ -2136,7 +2565,7 @@
 
   function saveOptions() {
     try {
-      localStorage.setItem(OPTIONS_KEY, JSON.stringify({ reduceMotion }));
+      localStorage.setItem(OPTIONS_KEY, JSON.stringify({ reduceMotion, reduceFlashes, textScale, difficulty }));
     } catch (error) {
       console.warn('Les options de mouvement n’ont pas pu être sauvegardées.', error);
     }
@@ -2144,8 +2573,16 @@
 
   function applyMotionPreference() {
     document.body.classList.toggle('reduced-motion', reduceMotion);
+    document.body.classList.toggle('reduced-flashes', reduceFlashes);
+    document.documentElement.style.fontSize = `${Math.round(textScale * 100)}%`;
     const control = $('reduce-motion-toggle');
     if (control) control.checked = reduceMotion;
+    const flashControl = $('reduce-flashes-toggle');
+    if (flashControl) flashControl.checked = reduceFlashes;
+    const textControl = $('text-scale');
+    if (textControl) textControl.value = String(Math.round(textScale * 100));
+    const difficultyControl = $('difficulty-select');
+    if (difficultyControl) difficultyControl.value = difficulty;
     syncStormAnimation();
   }
 
@@ -2163,6 +2600,9 @@
         reduceMotion = options.reduceMotion;
         hasMotionPreference = true;
       }
+      if (typeof options?.reduceFlashes === 'boolean') reduceFlashes = options.reduceFlashes;
+      if (Number.isFinite(options?.textScale)) textScale = clamp(options.textScale, 0.9, 1.25);
+      if (['story', 'normal', 'survival'].includes(options?.difficulty)) difficulty = options.difficulty;
     } catch (error) {
       console.warn('Les options de mouvement sont illisibles.', error);
     }
@@ -2222,7 +2662,19 @@
     ambientSource.connect(ambientFilter);
     ambientFilter.connect(ambientGain);
     ambientGain.connect(masterGain);
+    stormSource = audio.createBufferSource();
+    stormSource.buffer = buffer;
+    stormSource.loop = true;
+    stormFilter = audio.createBiquadFilter();
+    stormFilter.type = 'lowpass';
+    stormFilter.frequency.value = 180;
+    stormGain = audio.createGain();
+    stormGain.gain.value = 0;
+    stormSource.connect(stormFilter);
+    stormFilter.connect(stormGain);
+    stormGain.connect(masterGain);
     ambientSource.start();
+    stormSource.start();
     ambientLfo.start();
     return audioContext;
   }
@@ -2235,7 +2687,7 @@
       audio.resume().catch(() => toast('Impossible d’activer le son. Vérifie les réglages du navigateur.'));
     }
     const notes = {
-      start: [220, 330], map: [260], search: [340, 470], panel: [290],
+      start: [220, 330], map: [260], search: [340, 470], panel: [290], storm: [38, 53, 71],
       dialogue: [300, 390], choice: [360], event: [180, 260], chapter: [220, 330, 440],
       achievement: [523, 659], ending: [392, 523, 659], defeat: [220, 164],
       travel: [82, 196, 247], inspect: [190, 440, 554], read: [294, 370],
@@ -2245,13 +2697,13 @@
       const oscillator = audio.createOscillator();
       const gain = audio.createGain();
       const panner = kind === 'distant' && audio.createStereoPanner ? audio.createStereoPanner() : null;
-      oscillator.type = ['event', 'defeat', 'distant'].includes(kind) ? 'triangle' : 'sine';
+      oscillator.type = ['event', 'defeat', 'distant', 'storm'].includes(kind) ? 'triangle' : 'sine';
       oscillator.frequency.value = frequency;
       const start = audio.currentTime + index * 0.075;
       if (panner) panner.pan.value = Math.random() < 0.5 ? -0.78 : 0.78;
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(kind === 'distant' ? 0.045 : 0.12, start + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + (kind === 'distant' ? 0.9 : 0.28));
+      gain.gain.exponentialRampToValueAtTime(kind === 'distant' ? 0.045 : kind === 'storm' ? 0.06 : 0.12, start + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + (kind === 'distant' ? 0.9 : kind === 'storm' ? 1.35 : 0.28));
       oscillator.connect(gain);
       if (panner) {
         gain.connect(panner);
@@ -2260,18 +2712,18 @@
       oscillator.start(start);
       oscillator.stop(start + (kind === 'distant' ? 0.92 : 0.3));
     });
-    if (['search', 'inspect', 'travel', 'distant'].includes(kind) && ambientSource?.buffer) {
+    if (['search', 'inspect', 'travel', 'distant', 'storm'].includes(kind) && ambientSource?.buffer) {
       const noise = audio.createBufferSource();
       const filter = audio.createBiquadFilter();
       const envelope = audio.createGain();
       const panner = kind === 'distant' && audio.createStereoPanner ? audio.createStereoPanner() : null;
       noise.buffer = ambientSource.buffer;
       filter.type = 'bandpass';
-      filter.frequency.value = kind === 'travel' ? 185 : kind === 'distant' ? 420 : 780;
+      filter.frequency.value = kind === 'travel' ? 185 : kind === 'storm' ? 110 : kind === 'distant' ? 420 : 780;
       filter.Q.value = kind === 'distant' ? 0.45 : 0.8;
       envelope.gain.setValueAtTime(0.0001, audio.currentTime);
-      envelope.gain.exponentialRampToValueAtTime(kind === 'distant' ? 0.025 : 0.055, audio.currentTime + 0.025);
-      envelope.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + (kind === 'distant' ? 1.1 : 0.24));
+      envelope.gain.exponentialRampToValueAtTime(kind === 'distant' ? 0.025 : kind === 'storm' ? 0.09 : 0.055, audio.currentTime + 0.025);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + (kind === 'distant' ? 1.1 : kind === 'storm' ? 1.35 : 0.24));
       noise.connect(filter);
       filter.connect(envelope);
       if (panner) {
@@ -2279,8 +2731,8 @@
         envelope.connect(panner);
         panner.connect(masterGain);
       } else envelope.connect(masterGain);
-      noise.start(audio.currentTime, Math.random() * 1.5, kind === 'distant' ? 1.1 : 0.24);
-      noise.stop(audio.currentTime + (kind === 'distant' ? 1.1 : 0.24));
+      noise.start(audio.currentTime, Math.random() * 1.5, kind === 'distant' ? 1.1 : kind === 'storm' ? 1.35 : 0.24);
+      noise.stop(audio.currentTime + (kind === 'distant' ? 1.1 : kind === 'storm' ? 1.35 : 0.24));
     }
   }
 
@@ -2298,6 +2750,7 @@
     updateSoundButton();
     saveAudioSettings();
     if (soundEnabled) playSound('map');
+    updateStorm();
     toast(soundEnabled ? 'Ambiance sonore activée.' : 'Son coupé.');
   }
 
@@ -2344,7 +2797,7 @@
   }
 
   function renderSettingsPanel() {
-    $('dialog-content').innerHTML = `<label class="settings-row"><span>AMBIANCE &amp; EFFETS<small>Vent, pas, interactions et événements du récit.</small></span><input id="dialog-volume-range" type="range" min="0" max="100" value="${Math.round(volume * 100)}" aria-label="Volume de l’ambiance et des effets"></label><label class="settings-row"><span>RÉDUIRE LES MOUVEMENTS<small>Réduit la caméra, les particules et les transitions.</small></span><input id="reduce-motion-toggle" type="checkbox" ${reduceMotion ? 'checked' : ''}></label><p class="panel-hint">Le jeu respecte aussi la préférence de mouvement de ton système.</p>`;
+    $('dialog-content').innerHTML = `<label class="settings-row"><span>AMBIANCE &amp; EFFETS<small>Vent, pas, interactions et événements du récit.</small></span><input id="dialog-volume-range" type="range" min="0" max="100" value="${Math.round(volume * 100)}" aria-label="Volume de l’ambiance et des effets"></label><label class="settings-row"><span>RÉDUIRE LES MOUVEMENTS<small>Réduit les déplacements de caméra et les particules animées.</small></span><input id="reduce-motion-toggle" type="checkbox" ${reduceMotion ? 'checked' : ''}></label><label class="settings-row"><span>RÉDUIRE LES FLASHES<small>Désactive les éclairs lumineux de la tempête.</small></span><input id="reduce-flashes-toggle" type="checkbox" ${reduceFlashes ? 'checked' : ''}></label><label class="settings-row"><span>TAILLE DU TEXTE<small>Augmente la lisibilité des panneaux de jeu.</small></span><input id="text-scale" type="range" min="90" max="125" step="5" value="${Math.round(textScale * 100)}" aria-label="Taille du texte"></label><label class="settings-row"><span>DIFFICULTÉ MÉTÉO<small>Modifie la durée des trajets et les blessures en tempête.</small></span><select id="difficulty-select"><option value="story" ${difficulty === 'story' ? 'selected' : ''}>Récit · dégâts réduits</option><option value="normal" ${difficulty === 'normal' ? 'selected' : ''}>Normal · équilibre conseillé</option><option value="survival" ${difficulty === 'survival' ? 'selected' : ''}>Survie · dégâts renforcés</option></select></label><p class="panel-hint">Les dialogues et les sons importants sont sous-titrés ou décrits à l’écran. Le jeu respecte aussi la préférence de mouvement de ton système.</p>`;
   }
 
   function renderCreditsPanel() {
@@ -2384,6 +2837,7 @@
     const dialog = $('game-dialog');
     if (!dialog.open) dialog.showModal();
     else dialog.focus();
+    updateStorm();
   }
 
   function inspectInventoryItem(id) {
@@ -2550,6 +3004,10 @@
       safeSave();
     } else if (button.hasAttribute('data-open-exploration')) {
       openExploration();
+    } else if (button.hasAttribute('data-reinforce-refuge')) {
+      reinforceRefuge();
+    } else if (button.hasAttribute('data-distress-signal')) {
+      answerPreStormDistressSignal();
     } else if (button.hasAttribute('data-encounter-choice')) {
       resolveEncounter(Number(button.dataset.encounterChoice));
     } else if (button.hasAttribute('data-choice')) {
@@ -2578,16 +3036,10 @@
     } catch (error) {
       console.error('La sauvegarde n’a pas pu être supprimée.', error);
     }
-    Object.assign(state, {
-      phase: 'welcome', chapter: 1, day: 1, clockMinutes: START_CLOCK, elapsedMinutes: 0,
-      position: 'shelter', discovered: ['shelter', 'market', 'clinic', 'depot', 'village'],
-      inspected: [], exploredDetails: [], inventory: { waterskin: 1, fieldTools: 1 }, documents: [], readDocuments: [], linkedEvidence: [],
-      resources: { water: 1, food: 1, materials: 1, medicine: 0 },
-      health: 100, morale: 70, base: 60, route: 0, stress: 20,
-      clues: 0, trust: 0, selectedZone: null, currentSite: null,
-      searched: [], visited: [], journal: [], achievements: [], flags: {},
-      encounterDays: [], randomSeed: 0, activeEncounter: null, pendingScene: null, ending: null
-    });
+    mapZoom = 1;
+    mapOffset = { x: 0, y: 0 };
+    selectedEvidence.clear();
+    Object.assign(state, createInitialState());
     updateContinueButton();
     showScreen('welcome');
     render();
@@ -2652,6 +3104,7 @@
     explorationFocus = null;
     explorationDocumentFace = 'front';
     explorationDocumentZoomed = false;
+    updateStorm();
   });
   $('game-dialog').addEventListener('click', event => {
     if (event.target === $('game-dialog')) $('game-dialog').close();
@@ -2699,6 +3152,19 @@
       saveAudioSettings();
     } else if (input.id === 'reduce-motion-toggle') {
       setReducedMotion(input.checked);
+    } else if (input.id === 'reduce-flashes-toggle') {
+      reduceFlashes = input.checked;
+      applyMotionPreference();
+      saveOptions();
+    } else if (input.id === 'text-scale') {
+      textScale = clamp(Number(input.value) / 100, 0.9, 1.25);
+      applyMotionPreference();
+      saveOptions();
+    } else if (input.id === 'difficulty-select') {
+      difficulty = ['story', 'normal', 'survival'].includes(input.value) ? input.value : 'normal';
+      saveOptions();
+      render();
+      renderSettingsPanel();
     }
   });
   $('sound-toggle').addEventListener('click', toggleSound);
